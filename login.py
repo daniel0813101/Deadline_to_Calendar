@@ -8,6 +8,7 @@ from selenium.webdriver.support.ui import Select
 import os
 import csv
 import time 
+from datetime import datetime
 
 
 def login_and_scrape():
@@ -49,35 +50,60 @@ def login_and_scrape():
 
         time.sleep(2)
 
-        # Find 113_1 classes
+        
+        # Find and store 113_1 classes
         driver.switch_to.default_content()
         driver.switch_to.frame(WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "s_main"))))
-        l = driver.find_elements(By.CLASS_NAME, 'text-left')
-        for i in l:
-            print(i.text)
-            if '1131_' in i.text:
-                print(i.text.split('_')[1])
-                i.find_element(By.XPATH, "./ancestor::tr").find_element(By.XPATH, ".//button[@class='btn btn-gray']").click()
-                time.sleep(2)
+
+        courses_to_process = []
+        elements = driver.find_elements(By.CLASS_NAME, 'text-left')
+        for element in elements:
+            if '1131_' in element.text:
+                courses_to_process.append(element.text)
+
+        deadlines = {}
+        print(deadlines)
+        for course in courses_to_process:
+            print(course)
+            # Find the element again in the current page
+            driver.switch_to.default_content()
+            driver.switch_to.frame(WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "s_main"))))   
+                    
+            # Find the specific course element and its button
+            course_element = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, 
+                    f"//div[@class='text-left'][contains(text(), '{course}')]")))
+            course_name = course_element.text.split('_')[1]
+            course_element.find_element(By.XPATH, "./ancestor::tr").find_element(By.XPATH, ".//button[@class='btn btn-gray']").click()
+            time.sleep(3)
+
+            # Get homeworks deadline 
+            driver.switch_to.default_content()
+            driver.switch_to.frame(WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "s_main"))))   
+            deadlines[course_name] = get_deadline(driver)
+            print(f"{course_name } done")
 
 
+            # Back to origin homework page
+            driver.switch_to.default_content()
+            driver.switch_to.frame(WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "moocSysbar"))))
+            dropdown = Select(driver.find_element(By.ID, 'selcourse'))
+            dropdown.select_by_value('10000000')
 
-                # Back to origin homework page
-                driver.switch_to.default_content()
-                driver.switch_to.frame(driver.find_element(By.ID, "moocSysbar"))
-                dropdown = Select(driver.find_element(By.ID, 'selcourse'))
-                dropdown.select_by_value('10000000')
+            time.sleep(3)
 
-                time.sleep(2)
+            driver.switch_to.default_content()
+            driver.switch_to.frame(WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "moocSysbar"))))
+            driver.find_element(By.ID, 'SYS_06_01_004').click()
 
-                driver.switch_to.default_content()
-                driver.switch_to.frame(WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "moocSysbar"))))
-                driver.find_element(By.ID, 'SYS_06_01_004').click()
-    
-                time.sleep(2)
+            time.sleep(3)
 
-                driver.switch_to.default_content()
-                driver.switch_to.frame(driver.find_element(By.ID, "s_main"))
+            driver.switch_to.default_content()
+            driver.switch_to.frame(WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "s_main"))))
+
+        print(deadlines)
+        
+        # Interact with Google Calendar
                 
 
                 
@@ -89,6 +115,38 @@ def login_and_scrape():
     finally:
         # Close the browser
         driver.quit()
+
+# Get homework deadlines
+def get_deadline(driver):
+    
+    hw_deadline = {}
+    # Get deadline hw name and time
+    try:
+        homework_boxes = driver.find_elements(By.CLASS_NAME, "box2")
+        for box in homework_boxes:
+            title = box.find_element(By.XPATH, ".//span[@style='width: 230px;']").get_attribute("title")
+            deadline = box.find_element(By.CLASS_NAME, "sub-text").text
+            if '到' in deadline:
+                end_date_str = deadline.split('到')[1].strip()
+
+            deadline = datetime.strptime(end_date_str, '%Y-%m-%d %H:%M')
+            current_time = datetime.now()
+
+            if deadline > current_time:
+                hw_deadline[title] = deadline
+            
+            
+    except Exception as e:
+        print(f"Error getting deadlines: {e}")
+        
+    return hw_deadline
+
+
+# Import deadlines to Google Calendar
+def to_calendar():
+
+    # Connect to Google Calendar API
+    2
 
 if __name__ == "__main__":
     # Load environment variables
