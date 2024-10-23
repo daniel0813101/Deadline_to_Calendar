@@ -102,6 +102,7 @@ def login_and_scrape():
             driver.switch_to.frame(WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "s_main"))))
 
         print(deadlines)
+        return deadlines
         
         # Interact with Google Calendar
                 
@@ -143,10 +144,93 @@ def get_deadline(driver):
 
 
 # Import deadlines to Google Calendar
-def to_calendar():
+def to_calendar(deadlines):
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google.auth.transport.requests import Request
+    from googleapiclient.discovery import build
+    import pickle
+    import os.path
+    from datetime import datetime, timedelta
 
-    # Connect to Google Calendar API
-    2
+    # If modifying these scopes, delete the file token.pickle.
+    SCOPES = ['https://www.googleapis.com/auth/calendar']
+
+    creds = None
+    # The file token.pickle stores the user's access and refresh tokens
+    if os.path.exists('token.pickle'):
+        with open('token.pickle', 'rb') as token:
+            creds = pickle.load(token)
+            
+    # If there are no (valid) credentials available, let the user log in.
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(
+                'credentials.json', SCOPES)
+            creds = flow.run_local_server(port=0)
+        # Save the credentials for the next run
+        with open('token.pickle', 'wb') as token:
+            pickle.dump(creds, token)
+
+    # Create Google Calendar API service
+    service = build('calendar', 'v3', credentials=creds)
+
+    # Create events for each deadline
+    for course_name, homework_dict in deadlines.items():
+        for homework_title, deadline in homework_dict.items():
+            # Create event start time (1 hour before deadline)
+            start_time = deadline.replace(hour=deadline.hour - 1)
+            
+            # Set time range to search for existing events (1 day before and after the deadline)
+            time_min = (deadline - timedelta(days=1)).isoformat() + 'Z'
+            time_max = (deadline + timedelta(days=1)).isoformat() + 'Z'
+            
+            # Check if event already exists
+            events_result = service.events().list(
+                calendarId='primary',
+                timeMin=time_min,
+                timeMax=time_max,
+                singleEvents=True
+            ).execute()
+            
+            # Check each event in the time range for a match
+            event_exists = False
+            for existing_event in events_result.get('items', []):
+                if existing_event.get('summary') == f'[Homework Due] {course_name}: {homework_title}':
+                    print(f'Event for {homework_title} in {course_name} already exists')
+                    event_exists = True
+                    break
+            
+            if event_exists:
+                continue
+                
+            event = {
+                'summary': f'[Homework Due] {course_name}: {homework_title}',
+                'description': f'Deadline for {homework_title} in {course_name}',
+                'start': {
+                    'dateTime': start_time.isoformat(),
+                    'timeZone': 'Asia/Taipei',
+                },
+                'end': {
+                    'dateTime': deadline.isoformat(),
+                    'timeZone': 'Asia/Taipei',
+                },
+                'reminders': {
+                    'useDefault': False,
+                    'overrides': [
+                        {'method': 'popup', 'minutes': 60},       # 1 hour before
+                    ],
+                },
+            }
+
+            try:
+                event = service.events().insert(calendarId='primary', body=event).execute()
+                print(f'Created calendar event for {homework_title} in {course_name}')
+            except Exception as e:
+                print(f'Error creating event for {homework_title}: {e}')
+
 
 if __name__ == "__main__":
     # Load environment variables
@@ -154,4 +238,6 @@ if __name__ == "__main__":
     load_dotenv()
 
     # Run the scraping function
-    login_and_scrape()
+    deadline = login_and_scrape()
+    # Run the calendar event creation function
+    to_calendar(deadline)
