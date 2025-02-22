@@ -58,7 +58,7 @@ def login_and_scrape():
         courses_to_process = []
         elements = driver.find_elements(By.CLASS_NAME, 'text-left')
         for element in elements:
-            if '1131_' in element.text:
+            if '1132_' in element.text:
                 courses_to_process.append(element.text)
 
         deadlines = {}
